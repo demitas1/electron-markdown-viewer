@@ -22,15 +22,6 @@ if [ ! -x "$APPIMAGE" ]; then
     chmod +x "$APPIMAGE"
 fi
 
-# 引数が指定されているか確認
-if [ $# -eq 0 ]; then
-    echo "使用方法: $0 <markdown-file>"
-    echo ""
-    echo "例:"
-    echo "  $0 README.md"
-    echo "  $0 /path/to/document.md"
-    exit 1
-fi
-
 # サンドボックスを無効化してAppImageを実行
+# 引数なしで起動した場合はデフォルトのマークダウンファイルを表示
 ELECTRON_DISABLE_SANDBOX=1 "$APPIMAGE" "$@"
