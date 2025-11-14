@@ -12,15 +12,35 @@ app.commandLine.appendSwitch('no-sandbox');
 const themeManager = new ThemeManager();
 
 // Configure marked to use highlight.js for code blocks
-marked.setOptions({
-  highlight: function(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value;
-      } catch (err) {}
+const renderer = new marked.Renderer();
+
+// コードブロックのカスタムレンダラー（marked v17対応）
+renderer.code = function({text, lang, escaped}) {
+  const code = text;
+  const language = lang;
+
+  // mermaidブロックの場合は特別な処理
+  if (language === 'mermaid') {
+    // Mermaidはdiv要素を使用し、コードをエスケープせずにそのまま出力
+    return `<div class="mermaid">${code}</div>`;
+  }
+
+  // それ以外はhighlight.jsで処理
+  if (language && hljs.getLanguage(language)) {
+    try {
+      const highlighted = hljs.highlight(code, { language: language }).value;
+      return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`;
+    } catch (err) {
+      console.error('Highlight error:', err);
     }
-    return hljs.highlightAuto(code).value;
-  },
+  }
+
+  const autoHighlighted = hljs.highlightAuto(code).value;
+  return `<pre><code class="hljs">${autoHighlighted}</code></pre>`;
+};
+
+marked.setOptions({
+  renderer: renderer,
   breaks: true,
   gfm: true
 });
@@ -268,12 +288,50 @@ function loadMarkdownContent(win, markdownFile) {
         padding: 15px;
       }
     }
+
+    /* Mermaid図のスタイル調整 */
+    .markdown-body .mermaid {
+      background-color: transparent;
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .markdown-body .mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
   </style>
 </head>
 <body>
   <article class="markdown-body">
     ${htmlContent}
   </article>
+
+  <!-- Mermaid.js スクリプト (UMD版) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    // テーマに応じた設定
+    const currentTheme = '${themeManager.getEffectiveTheme()}';
+    const mermaidTheme = currentTheme === 'dark' ? 'dark' : 'default';
+
+    // Mermaidの初期化
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: mermaidTheme,
+      securityLevel: 'loose',
+      fontFamily: 'inherit'
+    });
+
+    // DOMContentLoadedイベントで確実に実行
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        mermaid.run();
+      });
+    } else {
+      mermaid.run();
+    }
+  </script>
+
   <script>
     // テーマ切り替え用スクリプト
     if (window.themeAPI) {
@@ -286,6 +344,9 @@ function loadMarkdownContent(win, markdownFile) {
 
         // body背景色を変更
         document.body.style.backgroundColor = data.css.bodyBg;
+
+        // Mermaid図のテーマ変更にはページリロードが必要
+        location.reload();
       });
     }
   </script>

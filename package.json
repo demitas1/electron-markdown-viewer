@@ -11,7 +11,10 @@
   "build": {
     "appId": "com.example.markdown-viewer",
     "linux": {
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     }
   },
   "keywords": [],
@@ -23,7 +26,8 @@
   "dependencies": {
     "github-markdown-css": "^5.8.1",
     "highlight.js": "^11.11.1",
-    "marked": "^17.0.0"
+    "marked": "^17.0.0",
+    "mermaid": "^11.12.1"
   },
   "devDependencies": {
     "electron": "^39.2.0",
