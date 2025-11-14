@@ -1,19 +1,32 @@
 {
   "name": "markdown-viewer",
   "version": "1.0.0",
-  "description": "",
+  "description": "GitHub互換のマークダウンビューア（Electron製）",
   "main": "main.js",
   "scripts": {
     "start": "ELECTRON_DISABLE_SANDBOX=1 electron .",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.example.markdown-viewer",
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": {
+    "name": "Markdown Viewer",
+    "email": "noreply@example.com"
+  },
+  "license": "MIT",
   "dependencies": {
-    "electron": "^39.2.0",
     "github-markdown-css": "^5.8.1",
     "highlight.js": "^11.11.1",
     "marked": "^17.0.0"
+  },
+  "devDependencies": {
+    "electron": "^39.2.0",
+    "electron-builder": "^26.0.12"
   }
 }

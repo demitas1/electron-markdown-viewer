@@ -12,6 +12,7 @@ markdown-viewer/
 ├── .gitignore           # Git除外設定
 ├── LICENSE.txt          # MITライセンス
 ├── CLAUDE.md            # Claude Code用ガイド
+├── markdown-viewer.sh   # AppImage実行用ラッパースクリプト
 ├── node_modules/        # 依存パッケージ
 │   ├── electron/
 │   ├── marked/
@@ -148,6 +149,44 @@ npm install --save-dev electron-builder
 
 ```bash
 npm run build
+```
+
+### ビルド成果物の実行
+
+ビルドが完了すると、`dist/`ディレクトリに以下のファイルが生成されます：
+
+- `markdown-viewer-1.0.0.AppImage` - AppImage形式（任意のLinuxディストリビューションで実行可能）
+- `markdown-viewer_1.0.0_amd64.deb` - Debian/Ubuntuパッケージ
+
+**AppImageの実行方法：**
+
+方法1: ラッパースクリプトを使用（推奨）
+
+```bash
+./markdown-viewer.sh <markdown-file>
+
+# 例
+./markdown-viewer.sh README.md
+./markdown-viewer.sh /path/to/document.md
+```
+
+方法2: 直接実行
+
+```bash
+# Linux環境では環境変数を設定して実行
+ELECTRON_DISABLE_SANDBOX=1 ./dist/markdown-viewer-1.0.0.AppImage <markdown-file>
+
+# 例
+ELECTRON_DISABLE_SANDBOX=1 ./dist/markdown-viewer-1.0.0.AppImage README.md
+```
+
+**debパッケージのインストール：**
+
+```bash
+sudo dpkg -i dist/markdown-viewer_1.0.0_amd64.deb
+
+# インストール後は通常のコマンドとして実行可能
+markdown-viewer <markdown-file>
 ```
 
 ## ライセンス

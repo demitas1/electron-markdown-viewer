@@ -45,10 +45,18 @@ npm start /path/to/document.md
 npm start README.md
 ```
 
-**Build for distribution (requires setup):**
+**Build for distribution:**
 ```bash
-npm install --save-dev electron-builder
 npm run build
+
+# ビルド成果物の実行（AppImage）- ラッパースクリプト使用（推奨）
+./markdown-viewer.sh <markdown-file>
+
+# または直接実行
+ELECTRON_DISABLE_SANDBOX=1 ./dist/markdown-viewer-1.0.0.AppImage <markdown-file>
+
+# debパッケージのインストール
+sudo dpkg -i dist/markdown-viewer_1.0.0_amd64.deb
 ```
 
 ## Architecture
