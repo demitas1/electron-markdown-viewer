@@ -4,12 +4,16 @@ const path = require('path');
 const { marked } = require('marked');
 const hljs = require('highlight.js');
 const { ThemeManager, THEMES } = require('./theme-manager');
+const { FileWatcher } = require('./file-watcher');
 
 // サンドボックスを無効化（開発環境用）
 app.commandLine.appendSwitch('no-sandbox');
 
 // テーママネージャーのインスタンス
 const themeManager = new ThemeManager();
+
+// ファイル監視マネージャーのインスタンス
+const fileWatcher = new FileWatcher({ debounceDelay: 300 });
 
 // Configure marked to use highlight.js for code blocks
 const renderer = new marked.Renderer();
@@ -236,8 +240,48 @@ async function openMarkdownFile(win) {
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
-    loadMarkdownContent(win, result.filePaths[0]);
+    const newFilePath = result.filePaths[0];
+    loadMarkdownContent(win, newFilePath);
+    // 監視対象ファイルを変更
+    fileWatcher.changeFile(newFilePath);
   }
+}
+
+/**
+ * ファイル監視を開始
+ * @param {BrowserWindow} win - 対象のウィンドウ
+ * @param {string} markdownFile - 監視対象のマークダウンファイルのパス
+ */
+function startFileWatching(win, markdownFile) {
+  // ファイル監視を開始
+  fileWatcher.watch(markdownFile);
+
+  // ファイル変更イベント
+  fileWatcher.on('change', (filePath) => {
+    console.log(`ファイルが変更されました: ${filePath}`);
+    loadMarkdownContent(win, filePath);
+  });
+
+  // ファイル削除イベント
+  fileWatcher.on('unlink', (filePath) => {
+    console.log(`ファイルが削除されました: ${filePath}`);
+    // ファイルが削除されても既存の表示を維持
+  });
+
+  // ファイル追加イベント（削除後の再作成）
+  fileWatcher.on('add', (filePath) => {
+    console.log(`ファイルが追加されました: ${filePath}`);
+  });
+
+  // エラーイベント
+  fileWatcher.on('error', (error) => {
+    console.error('ファイル監視エラー:', error);
+  });
+
+  // 監視準備完了イベント
+  fileWatcher.on('ready', (filePath) => {
+    console.log(`ファイル監視を開始しました: ${filePath}`);
+  });
 }
 
 /**
@@ -380,6 +424,9 @@ function createWindow(markdownFile) {
   // マークダウンファイルを読み込んで表示
   loadMarkdownContent(win, markdownFile);
 
+  // ファイル監視を開始
+  startFileWatching(win, markdownFile);
+
   // メニューを作成
   createMenu(win);
 
@@ -389,6 +436,11 @@ function createWindow(markdownFile) {
       // システム設定に従うモードの場合のみ再適用
       applyTheme(win);
     }
+  });
+
+  // ウィンドウが閉じられたときにファイル監視を停止
+  win.on('closed', () => {
+    fileWatcher.unwatch();
   });
 
   // Open DevTools (optional, comment out in production)

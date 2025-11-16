@@ -18,6 +18,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - highlight.js for syntax highlighting in code blocks
 - github-markdown-css for GitHub-compatible styling (light/dark themes)
 - mermaid for diagram rendering (flowcharts, sequence diagrams, gantt charts, etc.)
+- chokidar for file system watching with cross-platform support
 
 **Key Features:**
 - Light/Dark theme switching with system theme detection
@@ -25,6 +26,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - Default markdown file for argument-free startup
 - GitHub-compatible markdown rendering
 - Mermaid diagram support (flowcharts, sequence diagrams, gantt charts, class diagrams, state diagrams, ER diagrams)
+- **Hot reload**: Automatic viewer update when markdown file is edited externally
 
 ## Commands
 
@@ -86,9 +88,10 @@ Electron application with modular theme management and IPC communication:
 
 ```
 markdown-viewer/
-├── main.js              # メインプロセス（ウィンドウ管理、メニュー、IPC）
+├── main.js              # メインプロセス（ウィンドウ管理、メニュー、IPC、ファイル監視統合）
 ├── preload.js           # IPC通信ブリッジ（セキュアなAPIを公開）
 ├── theme-manager.js     # テーマ管理ロジック（SOLID原則に基づく設計）
+├── file-watcher.js      # ファイル監視モジュール（ホットリロード機能）
 ├── default.md           # デフォルトマークダウンファイル（内蔵）
 ├── package.json
 └── docs/
@@ -115,19 +118,30 @@ markdown-viewer/
    - Theme-specific CSS path resolution
    - Modular and testable design following SOLID principles
 
-3. **Preload Script (preload.js):**
+3. **File Watcher (file-watcher.js):**
+   - Monitors markdown file changes using `chokidar` library
+   - Debounces file change events (300ms default) to handle rapid consecutive writes
+   - Event-driven architecture with EventEmitter
+   - Handles file deletion and re-creation scenarios
+   - Cross-platform compatible file watching
+
+4. **Preload Script (preload.js):**
    - Secure bridge between main and renderer processes
    - Exposes `themeAPI` to renderer via `contextBridge`
    - Maintains `contextIsolation: true` security
 
-4. **Rendering Pipeline:**
+5. **Rendering Pipeline:**
    - Read markdown file (or default.md) → Parse with marked (configured with highlight.js and custom renderer for Mermaid) → Generate HTML with theme-aware CSS and Mermaid.js script → Load in Electron window via data URL → Mermaid automatically renders diagrams on page load
 
-5. **Configuration Points:**
+6. **Hot Reload Pipeline:**
+   - External editor saves markdown file → chokidar detects change → FileWatcher debounces events → 'change' event fired → loadMarkdownContent() re-executed → Viewer automatically updates
+
+7. **Configuration Points:**
    - Sandbox settings: main.js冒頭 (`app.commandLine.appendSwitch`) とBrowserWindow設定内 (`sandbox: false`)
    - Window size: createWindow関数内のBrowserWindow設定 (width/height)
    - Theme: View menu or system settings
    - DevTools: View menu → Toggle DevTools (Ctrl+Shift+I)
+   - Hot reload debounce delay: FileWatcher初期化時の`debounceDelay`オプション（デフォルト: 300ms）
 
 ## Important Notes
 
@@ -136,6 +150,17 @@ markdown-viewer/
 - File paths can be relative or absolute - resolved via `path.resolve()`
 - File menu → Open Markdown File (Ctrl+O) でファイルを開く
 - 対応拡張子: .md, .markdown, .mdown, .mkd
+
+### ホットリロード機能
+- **自動更新**: ファイルが外部エディタで編集・保存されると、ビューアーが自動的に更新される
+- **デバウンス処理**: 300msの遅延により、連続した編集を1つの更新イベントにまとめる
+- **サイレント動作**: 通知なしで自動更新（ユーザーの編集フローを妨げない）
+- **ファイル削除対応**: ファイルが削除されても既存の表示を維持（再作成時に自動更新）
+- **監視対象の自動切り替え**: File → Open Markdown Fileで新しいファイルを開くと、監視対象も自動的に切り替わる
+- **実装詳細**:
+  - `chokidar`ライブラリによるクロスプラットフォーム対応
+  - file-watcher.js:255-285でイベントハンドリング
+  - エディタの一時ファイル作成やアトミックライト処理に対応
 
 ### セキュリティ
 - All CSS is inlined in the HTML to avoid file system access from renderer
