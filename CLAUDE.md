@@ -27,6 +27,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - GitHub-compatible markdown rendering
 - Mermaid diagram support (flowcharts, sequence diagrams, gantt charts, class diagrams, state diagrams, ER diagrams)
 - **Hot reload**: Automatic viewer update when markdown file is edited externally
+- **Image display**: Support for local images with relative paths (e.g., `./path/to/image.jpg`)
 
 ## Commands
 
@@ -104,7 +105,17 @@ markdown-viewer/
    - **初期化**: `app.commandLine.appendSwitch('no-sandbox')` でサンドボックスを無効化（Linux環境対策）
    - Entry point that reads command-line arguments (optional - uses default.md if not provided)
    - Uses `marked` library to parse markdown to HTML with GFM and syntax highlighting enabled
-   - **Custom Renderer**: marked v17対応のカスタムレンダラーで`mermaid`コードブロックを特別処理
+   - **Custom Renderer**: marked v17対応のカスタムレンダラーで以下を特別処理:
+     - `mermaid`コードブロック → `<div class="mermaid">`
+     - 画像タグ → Base64エンコードされたData URLに変換
+   - **Image Processing**:
+     - `convertImageToDataURL()`関数でローカル画像をBase64変換 (main.js:50-77)
+     - 相対パスを絶対パスに解決し、ファイルを読み込み
+     - 拡張子からMIMEタイプを自動判定(PNG/JPG/GIF/SVG/WebP/BMP/ICO対応)
+     - `data:image/png;base64,...` 形式で返却
+   - **HTML Loading**:
+     - 一時HTMLファイル(`app.getPath('temp')/markdown-viewer-temp.html`)を使用
+     - Data URLナビゲーション制限を回避するため`loadFile()`で読み込み
    - Theme-aware CSS loading from `github-markdown-css` and `highlight.js`
    - **Mermaid Integration**: CDN経由でmermaid.js (UMD版) を読み込み、テーマに応じて初期化
    - Creates BrowserWindow with `contextIsolation: true`, `nodeIntegration: false`, `sandbox: false`, and preload script
@@ -131,7 +142,7 @@ markdown-viewer/
    - Maintains `contextIsolation: true` security
 
 5. **Rendering Pipeline:**
-   - Read markdown file (or default.md) → Parse with marked (configured with highlight.js and custom renderer for Mermaid) → Generate HTML with theme-aware CSS and Mermaid.js script → Load in Electron window via data URL → Mermaid automatically renders diagrams on page load
+   - Read markdown file (or default.md) → Parse with marked (configured with highlight.js and custom renderer for Mermaid and images) → Generate HTML with theme-aware CSS and Mermaid.js script → Write to temporary HTML file → Load in Electron window via loadFile → Mermaid automatically renders diagrams on page load
 
 6. **Hot Reload Pipeline:**
    - External editor saves markdown file → chokidar detects change → FileWatcher debounces events → 'change' event fired → loadMarkdownContent() re-executed → Viewer automatically updates
@@ -142,6 +153,8 @@ markdown-viewer/
    - Theme: View menu or system settings
    - DevTools: View menu → Toggle DevTools (Ctrl+Shift+I)
    - Hot reload debounce delay: FileWatcher初期化時の`debounceDelay`オプション（デフォルト: 300ms）
+   - Temporary HTML file location: `app.getPath('temp')/markdown-viewer-temp.html`
+   - Supported image formats: convertImageToDataURL関数内のmimeTypesオブジェクト (main.js:57-66)
 
 ## Important Notes
 
@@ -169,6 +182,10 @@ markdown-viewer/
   - `app.commandLine.appendSwitch('no-sandbox')` で全体的に無効化
   - `webPreferences.sandbox: false` でレンダラープロセスでも無効化
   - package.jsonの`start`スクリプトに `ELECTRON_DISABLE_SANDBOX=1` 環境変数設定を追加可能
+- **Data URLナビゲーション制限**: 新しいElectronではData URLへのトップフレームナビゲーションが制限されるため、一時HTMLファイルを使用
+  - `app.getPath('temp')`で一時ディレクトリを取得
+  - `markdown-viewer-temp.html`として保存し、`loadFile()`で読み込み
+  - ページリロード時に最新のHTMLで上書き
 
 ### テーマ機能
 - **Light Theme**: github-markdown-light.css + github.css (highlight.js) + default theme (Mermaid)
@@ -203,6 +220,62 @@ markdown-viewer/
   - ページロード時に自動的にSVG図にレンダリング
   - テーマに応じてMermaidのテーマ設定も自動調整
 
+### 画像表示機能
+- **サポートされる画像形式**:
+  - ローカル画像: PNG, JPG, JPEG, GIF, SVG, WebP
+  - Web画像: `https://`または`http://`で始まるURL
+  - Data URL: `data:`スキームの画像
+
+- **使用方法**:
+  ```markdown
+  # 相対パス（同じディレクトリ）
+  ![説明文](./image.png)
+
+  # 相対パス（サブディレクトリ）
+  ![説明文](./images/photo.jpg)
+
+  # 相対パス（親ディレクトリ）
+  ![説明文](../picture.png)
+
+  # Web画像
+  ![説明文](https://example.com/image.png)
+
+  # タイトル付き画像
+  ![説明文](./image.png "これはタイトルです")
+  ```
+
+- **技術的な実装**:
+  - markedのカスタムレンダラー(`renderer.image`)で画像タグを処理 (main.js:79-105)
+  - 相対パスは`currentMarkdownDir`（現在のマークダウンファイルのディレクトリ）を基準に絶対パスに変換
+  - **ローカル画像はBase64エンコードしてData URLとして埋め込み** (Electronのセキュリティ制約を回避)
+  - `https://`、`http://`、`data:`で始まるURLはそのまま使用
+  - loadMarkdownContent関数(main.js:353-477)でマークダウンファイルのディレクトリパスを保存
+  - convertImageToDataURL関数(main.js:50-77)で画像ファイルを読み込みBase64変換
+
+- **パス解決とBase64変換の仕組み**:
+  1. マークダウンファイルを読み込む際、そのファイルのディレクトリパスを`currentMarkdownDir`に保存 (main.js:356)
+  2. 画像タグのパスが相対パスの場合、`path.resolve(currentMarkdownDir, imagePath)`で絶対パスに変換 (main.js:87)
+  3. 変換した絶対パスの画像ファイルを`fs.readFileSync()`で読み込み (main.js:53)
+  4. MIMEタイプを拡張子から判定:
+     - サポートされる拡張子: `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.bmp`, `.ico`
+     - MIMEタイプマッピング例: `.png` → `image/png`, `.jpg` → `image/jpeg`
+     - デフォルトは`image/png` (main.js:56-68)
+  5. Buffer形式の画像データをBase64エンコード: `buffer.toString('base64')` (main.js:71)
+  6. Data URLを生成: `data:${mimeType};base64,${base64}` (main.js:72)
+  7. 生成したData URLをHTML imgタグのsrc属性に設定 (main.js:92)
+  8. 画像が見つからない場合は警告ログを出力し、元のパスを使用(altテキストが表示される) (main.js:95-97)
+
+- **Electronセキュリティ制約の対処**:
+  - **問題1**: `file://`プロトコルでのローカルリソース読み込みが制限される
+    - **解決**: Base64エンコードでData URLとして埋め込み
+  - **問題2**: Data URLへのトップフレームナビゲーションが制限される (Electron v28+)
+    - **エラー**: `Not allowed to navigate top frame to data URL`
+    - **解決**: 一時HTMLファイルを使用 (main.js:467-469)
+      - `app.getPath('temp')`で一時ディレクトリを取得
+      - `markdown-viewer-temp.html`として保存
+      - `win.loadFile(tempHtmlPath)`で読み込み
+      - ページ更新時に自動的に上書き
+
 ## Menu Structure
 
 アプリケーションメニューの構成：
@@ -233,7 +306,9 @@ markdown-viewer/
 
 ## Known Issues and Solutions
 
-**Linux環境でのサンドボックスエラー:**
+### Linux環境でのサンドボックスエラー
+
+**エラーメッセージ:**
 ```
 FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166
 The SUID sandbox helper binary was found, but is not configured correctly.
@@ -243,3 +318,42 @@ The SUID sandbox helper binary was found, but is not configured correctly.
 1. 環境変数で無効化: `ELECTRON_DISABLE_SANDBOX=1 npm start <file>`
 2. コード内で無効化（既に実装済み）: `app.commandLine.appendSwitch('no-sandbox')`
 3. 本番環境向け: chrome-sandboxに適切な権限を設定 (root所有、mode 4755)
+
+### Electron v28+でのData URLナビゲーションエラー
+
+**エラーメッセージ:**
+```
+Not allowed to navigate top frame to data URL: data:text/html;charset=utf-8,...
+```
+
+**原因:**
+- Electron v28以降、セキュリティ強化のためData URLへのトップフレームナビゲーションが制限される
+
+**解決方法（既に実装済み）:**
+- `win.loadURL('data:...')` の代わりに一時HTMLファイルを使用
+- 実装箇所: main.js:467-469
+```javascript
+const tempHtmlPath = path.join(app.getPath('temp'), 'markdown-viewer-temp.html');
+fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+win.loadFile(tempHtmlPath);
+```
+
+### ローカル画像が表示されない問題
+
+**エラーメッセージ:**
+```
+Not allowed to load local resource: file:///path/to/image.jpg
+```
+
+**原因:**
+- Electronのセキュリティポリシーにより、Data URLから`file://`プロトコルでのローカルリソース読み込みが制限される
+
+**解決方法（既に実装済み）:**
+- ローカル画像をBase64エンコードしてData URLとして埋め込み
+- 実装箇所: main.js:50-77 (convertImageToDataURL関数)
+```javascript
+// 画像ファイルを読み込み、Base64変換
+const imageBuffer = fs.readFileSync(imagePath);
+const base64 = imageBuffer.toString('base64');
+return `data:${mimeType};base64,${base64}`;
+```

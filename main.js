@@ -18,6 +18,9 @@ const fileWatcher = new FileWatcher({ debounceDelay: 300 });
 // Configure marked to use highlight.js for code blocks
 const renderer = new marked.Renderer();
 
+// 現在レンダリング中のマークダウンファイルのパスを保持
+let currentMarkdownDir = '';
+
 // コードブロックのカスタムレンダラー（marked v17対応）
 renderer.code = function({text, lang, escaped}) {
   const code = text;
@@ -41,6 +44,64 @@ renderer.code = function({text, lang, escaped}) {
 
   const autoHighlighted = hljs.highlightAuto(code).value;
   return `<pre><code class="hljs">${autoHighlighted}</code></pre>`;
+};
+
+// 画像ファイルをBase64 Data URLに変換する関数
+function convertImageToDataURL(imagePath) {
+  try {
+    // 画像ファイルを読み込み
+    const imageBuffer = fs.readFileSync(imagePath);
+
+    // 拡張子からMIMEタイプを判定
+    const ext = path.extname(imagePath).toLowerCase();
+    const mimeTypes = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.webp': 'image/webp',
+      '.bmp': 'image/bmp',
+      '.ico': 'image/x-icon'
+    };
+
+    const mimeType = mimeTypes[ext] || 'image/png';
+
+    // Base64エンコード
+    const base64 = imageBuffer.toString('base64');
+    return `data:${mimeType};base64,${base64}`;
+  } catch (err) {
+    console.error(`画像の読み込みに失敗: ${imagePath}`, err);
+    return null;
+  }
+}
+
+// 画像タグのカスタムレンダラー（ローカル画像はBase64に変換）
+renderer.image = function({href, title, text}) {
+  let imageSrc = href;
+
+  // http:// や https:// で始まる場合はそのまま使用
+  // data: スキームの場合もそのまま使用
+  if (!href.match(/^(https?:\/\/|data:)/i)) {
+    // 相対パスを絶対パスに変換
+    const absolutePath = path.resolve(currentMarkdownDir, href);
+
+    // ローカル画像をBase64 Data URLに変換
+    const dataURL = convertImageToDataURL(absolutePath);
+    if (dataURL) {
+      imageSrc = dataURL;
+    } else {
+      // 変換失敗時はエラーメッセージを表示
+      console.warn(`画像が見つかりません: ${absolutePath}`);
+      // 元のパスを使用（画像は表示されないが、altテキストは表示される）
+      imageSrc = href;
+    }
+  }
+
+  // HTML画像タグを生成
+  const titleAttr = title ? ` title="${title}"` : '';
+  const altAttr = text ? ` alt="${text}"` : '';
+  return `<img src="${imageSrc}"${altAttr}${titleAttr}>`;
 };
 
 marked.setOptions({
@@ -291,6 +352,9 @@ function startFileWatching(win, markdownFile) {
  */
 function loadMarkdownContent(win, markdownFile) {
   try {
+    // 現在のマークダウンファイルのディレクトリを保存（画像パス解決に使用）
+    currentMarkdownDir = path.dirname(path.resolve(markdownFile));
+
     // マークダウンファイルを読み込み
     const markdown = fs.readFileSync(markdownFile, 'utf-8');
     const htmlContent = marked.parse(markdown);
@@ -398,8 +462,11 @@ function loadMarkdownContent(win, markdownFile) {
 </html>
     `;
 
-    // HTMLをロード（先頭に移動）
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    // HTMLをロード
+    // Data URLナビゲーション制限を回避するため、一時HTMLファイルを使用
+    const tempHtmlPath = path.join(app.getPath('temp'), 'markdown-viewer-temp.html');
+    fs.writeFileSync(tempHtmlPath, html, 'utf-8');
+    win.loadFile(tempHtmlPath);
 
     // タイトルを更新
     win.setTitle(path.basename(markdownFile));
