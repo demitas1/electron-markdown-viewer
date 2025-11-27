@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, Menu, nativeTheme, dialog, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
@@ -20,6 +20,12 @@ const renderer = new marked.Renderer();
 
 // 現在レンダリング中のマークダウンファイルのパスを保持
 let currentMarkdownDir = '';
+
+// ホットリロード時のスクロール位置保存用
+let savedScrollPosition = 0;
+let isHotReload = false;
+let scrollRestoreTimeout = null;
+const SCROLL_RESTORE_TIMEOUT_MS = 2000; // Mermaidレンダリング待機のタイムアウト
 
 // コードブロックのカスタムレンダラー（marked v17対応）
 renderer.code = function({text, lang, escaped}) {
@@ -312,15 +318,20 @@ async function openMarkdownFile(win) {
  * ファイル監視を開始
  * @param {BrowserWindow} win - 対象のウィンドウ
  * @param {string} markdownFile - 監視対象のマークダウンファイルのパス
+ * @param {Function} onFileChange - ファイル変更時のコールバック（filePathを引数に受け取る）
  */
-function startFileWatching(win, markdownFile) {
+function startFileWatching(win, markdownFile, onFileChange) {
   // ファイル監視を開始
   fileWatcher.watch(markdownFile);
 
-  // ファイル変更イベント
+  // ファイル変更イベント（ホットリロード）
   fileWatcher.on('change', (filePath) => {
     console.log(`ファイルが変更されました: ${filePath}`);
-    loadMarkdownContent(win, filePath);
+
+    // コールバックでファイルパスを通知（スクロール位置保存後にリロード）
+    if (onFileChange) {
+      onFileChange(filePath);
+    }
   });
 
   // ファイル削除イベント
@@ -418,25 +429,40 @@ function loadMarkdownContent(win, markdownFile) {
   <!-- Mermaid.js スクリプト (UMD版) -->
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script>
-    // テーマに応じた設定
-    const currentTheme = '${themeManager.getEffectiveTheme()}';
-    const mermaidTheme = currentTheme === 'dark' ? 'dark' : 'default';
+    // Mermaidレンダリングとコンテンツ準備完了通知
+    async function initializeMermaidAndNotifyReady() {
+      const currentTheme = '${themeManager.getEffectiveTheme()}';
+      const mermaidTheme = currentTheme === 'dark' ? 'dark' : 'default';
 
-    // Mermaidの初期化
-    mermaid.initialize({
-      startOnLoad: true,
-      theme: mermaidTheme,
-      securityLevel: 'loose',
-      fontFamily: 'inherit'
-    });
-
-    // DOMContentLoadedイベントで確実に実行
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        mermaid.run();
+      // Mermaidの初期化（自動実行は無効化）
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: mermaidTheme,
+        securityLevel: 'loose',
+        fontFamily: 'inherit'
       });
+
+      // Mermaid要素があれば変換を待つ
+      const mermaidElements = document.querySelectorAll('.mermaid');
+      if (mermaidElements.length > 0) {
+        try {
+          await mermaid.run({ nodes: mermaidElements });
+        } catch (err) {
+          console.error('Mermaidレンダリングエラー:', err);
+        }
+      }
+
+      // コンテンツ準備完了を通知
+      if (window.scrollAPI) {
+        window.scrollAPI.notifyReady();
+      }
+    }
+
+    // DOMContentLoadedイベントで実行
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeMermaidAndNotifyReady);
     } else {
-      mermaid.run();
+      initializeMermaidAndNotifyReady();
     }
   </script>
 
@@ -455,6 +481,23 @@ function loadMarkdownContent(win, markdownFile) {
 
         // Mermaid図のテーマ変更にはページリロードが必要
         location.reload();
+      });
+    }
+
+    // スクロール位置保存・復元スクリプト
+    if (window.scrollAPI) {
+      // スクロール位置保存リクエストを受信
+      window.scrollAPI.onSaveScroll(() => {
+        const scrollPosition = window.scrollY;
+        window.scrollAPI.sendScrollPosition(scrollPosition);
+      });
+
+      // スクロール位置復元リクエストを受信
+      window.scrollAPI.onRestoreScroll((position) => {
+        // ページ高さを超えないようにクランプ
+        const maxScroll = document.body.scrollHeight - window.innerHeight;
+        const safePosition = Math.min(position, Math.max(0, maxScroll));
+        window.scrollTo(0, safePosition);
       });
     }
   </script>
@@ -488,11 +531,53 @@ function createWindow(markdownFile) {
     }
   });
 
+  // 現在監視中のファイルパスを保持
+  let currentWatchedFile = markdownFile;
+
+  // スクロール位置保存のIPC ハンドラ
+  ipcMain.on('scroll:saved', (event, position) => {
+    if (isHotReload) {
+      savedScrollPosition = position;
+      console.log(`スクロール位置を保存: ${savedScrollPosition}px`);
+      // スクロール位置を受信したのでリロード実行
+      loadMarkdownContent(win, currentWatchedFile);
+    }
+  });
+
+  // コンテンツ準備完了のIPC ハンドラ（Mermaidレンダリング完了後）
+  ipcMain.on('content:ready', (event) => {
+    // タイムアウトをクリア
+    if (scrollRestoreTimeout) {
+      clearTimeout(scrollRestoreTimeout);
+      scrollRestoreTimeout = null;
+    }
+
+    // ホットリロード時のみスクロール位置を復元
+    if (isHotReload && savedScrollPosition > 0) {
+      console.log(`スクロール位置を復元: ${savedScrollPosition}px`);
+      win.webContents.send('scroll:restore', savedScrollPosition);
+      savedScrollPosition = 0;
+    }
+    isHotReload = false;
+  });
+
   // マークダウンファイルを読み込んで表示
   loadMarkdownContent(win, markdownFile);
 
-  // ファイル監視を開始
-  startFileWatching(win, markdownFile);
+  // ファイル監視を開始（ファイル変更時のコールバック付き）
+  startFileWatching(win, markdownFile, (filePath) => {
+    // 現在監視中のファイルパスを更新
+    currentWatchedFile = filePath;
+
+    // ホットリロードフラグを設定
+    isHotReload = true;
+
+    // レンダラープロセスにスクロール位置の保存を要求
+    win.webContents.send('scroll:save');
+
+    // スクロール位置を受信してからリロードする
+    // （ipcMain.on('scroll:saved') で処理）
+  });
 
   // メニューを作成
   createMenu(win);
@@ -505,9 +590,17 @@ function createWindow(markdownFile) {
     }
   });
 
-  // ウィンドウが閉じられたときにファイル監視を停止
+  // ウィンドウが閉じられたときのクリーンアップ
   win.on('closed', () => {
     fileWatcher.unwatch();
+    // IPCハンドラを削除
+    ipcMain.removeAllListeners('scroll:saved');
+    ipcMain.removeAllListeners('content:ready');
+    // タイムアウトをクリア
+    if (scrollRestoreTimeout) {
+      clearTimeout(scrollRestoreTimeout);
+      scrollRestoreTimeout = null;
+    }
   });
 
   // Open DevTools (optional, comment out in production)
