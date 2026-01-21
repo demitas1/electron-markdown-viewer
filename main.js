@@ -607,9 +607,9 @@ function createWindow(markdownFile) {
         // 一時ディレクトリからのパスの場合、元のディレクトリ基準で解決
         const tempDir = app.getPath('temp');
         if (urlPath.startsWith(tempDir)) {
-          // 一時ファイルからの相対パスなので、ファイル名部分を取得して元のディレクトリで解決
-          const fileName = path.basename(urlPath);
-          targetPath = path.resolve(currentMarkdownDir, fileName);
+          // 一時ファイルからの相対パスを取得して元のディレクトリで解決
+          const relativePath = path.relative(tempDir, urlPath);
+          targetPath = path.resolve(currentMarkdownDir, relativePath);
         }
 
         // ファイルが存在するか確認
