@@ -11,6 +11,7 @@ This is a **GitHub-compatible** markdown viewer built with Electron.
 - ~~Strikethrough~~
 - `inline code`
 - [Links](https://github.com)
+- [Links](./test-image.md)
 
 ### Code Blocks
 

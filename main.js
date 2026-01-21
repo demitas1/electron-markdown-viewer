@@ -590,6 +590,40 @@ function createWindow(markdownFile) {
     }
   });
 
+  // マークダウンファイルへのリンククリック時のナビゲーション処理
+  win.webContents.on('will-navigate', (event, url) => {
+    // file://プロトコルのURLを処理
+    if (url.startsWith('file://')) {
+      const urlPath = decodeURIComponent(url.replace('file://', ''));
+      const ext = path.extname(urlPath).toLowerCase();
+      const markdownExtensions = ['.md', '.markdown', '.mdown', '.mkd'];
+
+      if (markdownExtensions.includes(ext)) {
+        event.preventDefault();
+
+        // 一時ファイルからの相対パスを元のマークダウンディレクトリ基準で解決
+        let targetPath = urlPath;
+
+        // 一時ディレクトリからのパスの場合、元のディレクトリ基準で解決
+        const tempDir = app.getPath('temp');
+        if (urlPath.startsWith(tempDir)) {
+          // 一時ファイルからの相対パスなので、ファイル名部分を取得して元のディレクトリで解決
+          const fileName = path.basename(urlPath);
+          targetPath = path.resolve(currentMarkdownDir, fileName);
+        }
+
+        // ファイルが存在するか確認
+        if (fs.existsSync(targetPath)) {
+          console.log(`マークダウンリンクを開きます: ${targetPath}`);
+          loadMarkdownContent(win, targetPath);
+          startFileWatching(win, targetPath);
+        } else {
+          console.error(`ファイルが見つかりません: ${targetPath}`);
+        }
+      }
+    }
+  });
+
   // ウィンドウが閉じられたときのクリーンアップ
   win.on('closed', () => {
     fileWatcher.unwatch();
