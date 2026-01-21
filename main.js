@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, nativeTheme, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, nativeTheme, dialog, ipcMain, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
@@ -20,6 +20,10 @@ const renderer = new marked.Renderer();
 
 // 現在レンダリング中のマークダウンファイルのパスを保持
 let currentMarkdownDir = '';
+let currentMarkdownFile = '';
+
+// ナビゲーション履歴（戻る機能用）
+let navigationHistory = [];
 
 // ホットリロード時のスクロール位置保存用
 let savedScrollPosition = 0;
@@ -363,8 +367,9 @@ function startFileWatching(win, markdownFile, onFileChange) {
  */
 function loadMarkdownContent(win, markdownFile) {
   try {
-    // 現在のマークダウンファイルのディレクトリを保存（画像パス解決に使用）
-    currentMarkdownDir = path.dirname(path.resolve(markdownFile));
+    // 現在のマークダウンファイルのパスとディレクトリを保存
+    currentMarkdownFile = path.resolve(markdownFile);
+    currentMarkdownDir = path.dirname(currentMarkdownFile);
 
     // マークダウンファイルを読み込み
     const markdown = fs.readFileSync(markdownFile, 'utf-8');
@@ -590,8 +595,16 @@ function createWindow(markdownFile) {
     }
   });
 
-  // マークダウンファイルへのリンククリック時のナビゲーション処理
+  // リンククリック時のナビゲーション処理
   win.webContents.on('will-navigate', (event, url) => {
+    // http/httpsリンクは外部ブラウザで開く
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      event.preventDefault();
+      console.log(`外部ブラウザで開きます: ${url}`);
+      shell.openExternal(url);
+      return;
+    }
+
     // file://プロトコルのURLを処理
     if (url.startsWith('file://')) {
       const urlPath = decodeURIComponent(url.replace('file://', ''));
@@ -614,6 +627,10 @@ function createWindow(markdownFile) {
 
         // ファイルが存在するか確認
         if (fs.existsSync(targetPath)) {
+          // 現在のファイルを履歴に追加
+          if (currentMarkdownFile) {
+            navigationHistory.push(currentMarkdownFile);
+          }
           console.log(`マークダウンリンクを開きます: ${targetPath}`);
           loadMarkdownContent(win, targetPath);
           startFileWatching(win, targetPath);
@@ -624,9 +641,24 @@ function createWindow(markdownFile) {
     }
   });
 
+  // Backspaceキーで戻る機能
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Backspace') {
+      // 履歴がある場合のみ戻る
+      if (navigationHistory.length > 0) {
+        event.preventDefault();
+        const previousFile = navigationHistory.pop();
+        console.log(`戻る: ${previousFile}`);
+        loadMarkdownContent(win, previousFile);
+        startFileWatching(win, previousFile);
+      }
+    }
+  });
+
   // ウィンドウが閉じられたときのクリーンアップ
   win.on('closed', () => {
     fileWatcher.unwatch();
+    navigationHistory = []; // 履歴をクリア
     // IPCハンドラを削除
     ipcMain.removeAllListeners('scroll:saved');
     ipcMain.removeAllListeners('content:ready');

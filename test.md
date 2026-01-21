@@ -62,7 +62,7 @@ console.log(fibonacci(10));
 
 ### Images (if you have any)
 
-![Alt text](https://via.placeholder.com/150)
+![Google Logo](https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png)
 
 ## Mathematical Expressions
 
