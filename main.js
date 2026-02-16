@@ -272,28 +272,13 @@ function createMenu(win) {
 }
 
 /**
- * テーマを適用（レンダラープロセスへIPC送信）
+ * テーマを適用（HTMLを再生成してリロード）
  * @param {BrowserWindow} win - 対象のウィンドウ
  */
 function applyTheme(win) {
-  const cssPaths = themeManager.getThemeCssPaths(__dirname);
-
-  try {
-    // CSSファイルを読み込み
-    const markdownCss = fs.readFileSync(cssPaths.markdown, 'utf-8');
-    const highlightCss = fs.readFileSync(cssPaths.highlight, 'utf-8');
-
-    // レンダラープロセスへ送信
-    win.webContents.send('theme:change', {
-      theme: themeManager.getEffectiveTheme(),
-      css: {
-        markdown: markdownCss,
-        highlight: highlightCss,
-        bodyBg: cssPaths.bodyBg
-      }
-    });
-  } catch (err) {
-    console.error('テーマの適用に失敗:', err);
+  // 現在のマークダウンファイルを新しいテーマで再レンダリング
+  if (currentMarkdownFile) {
+    loadMarkdownContent(win, currentMarkdownFile);
   }
 }
 

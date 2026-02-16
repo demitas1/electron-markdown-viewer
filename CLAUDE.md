@@ -28,6 +28,8 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - Mermaid diagram support (flowcharts, sequence diagrams, gantt charts, class diagrams, state diagrams, ER diagrams)
 - **Hot reload**: Automatic viewer update when markdown file is edited externally
 - **Image display**: Support for local images with relative paths (e.g., `./path/to/image.jpg`)
+- **Link navigation**: Click markdown links to navigate between files, with browser back functionality
+- **External links**: HTTP/HTTPS links open in default browser
 
 ## Commands
 
@@ -275,6 +277,42 @@ markdown-viewer/
       - `markdown-viewer-temp.html`として保存
       - `win.loadFile(tempHtmlPath)`で読み込み
       - ページ更新時に自動的に上書き
+
+### リンクナビゲーション機能
+
+- **マークダウンリンク**: 相対パスのマークダウンファイルへのリンクをクリックするとアプリ内で開く
+  - 対応形式: `[リンクテキスト](./path/to/file.md)`
+  - サブディレクトリを含む相対パスにも対応: `./Project/doc.md`
+  - 対応拡張子: .md, .markdown, .mdown, .mkd
+
+- **外部リンク**: HTTP/HTTPSリンクをクリックするとデフォルトブラウザで開く
+  - `shell.openExternal()` を使用
+  - 対応形式: `[リンクテキスト](https://example.com)`
+
+- **戻る機能**: Backspaceキーで前のファイルに戻る
+  - ナビゲーション履歴をスタックで管理
+  - リンククリック時に現在のファイルを履歴に追加
+  - 履歴が空の場合はBackspaceキーは何もしない
+
+- **技術的な実装**:
+  - `will-navigate` イベントでリンククリックを検出
+  - 一時ファイルからの相対パスを `currentMarkdownDir` 基準で解決
+  - `path.relative()` でサブディレクトリを含むパスを正しく処理
+  - `before-input-event` でBackspaceキーを検出
+  - `navigationHistory` 配列で履歴を管理
+  - ファイル監視も自動的に新しいファイルに切り替え
+
+- **使用方法**:
+  ```markdown
+  # 同じディレクトリのファイル
+  [ドキュメント](./readme.md)
+
+  # サブディレクトリのファイル
+  [設計書](./docs/design.md)
+
+  # 外部リンク
+  [GitHub](https://github.com)
+  ```
 
 ## Menu Structure
 
