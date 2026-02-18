@@ -1,35 +1,73 @@
 # 画像表示テスト
 
-このマークダウンファイルは、実際の画像ファイルを使用して画像表示機能のテストを行います。
+このマークダウンファイルは、マークダウン記法と `<img>` タグ両方の画像表示機能をテストします。
 
-## ローカル画像の表示
+---
 
-以下は実際のSVG画像です:
+## 1. マークダウン記法（従来）
 
-![テスト画像](./images/test.svg)
+### シンプルなローカル画像
 
-## Web画像の表示
+![テスト画像 SVG](./images/test.svg)
 
-以下はWeb上の画像です:
+### PNGファイル
+
+![テスト画像 PNG](./images/test.png)
+
+### タイトル付き
+
+![Alt text](./images/test.svg "これはタイトルです")
+
+### Web画像
 
 ![Placeholder画像](https://via.placeholder.com/300x200/09f/fff.png?text=Web+Image)
 
-## パス指定のテスト
+---
 
-### 1. サブディレクトリ内の画像
-![サブディレクトリの画像](./images/test.svg)
+## 2. `<img>` タグ記法（新規対応）
 
-### 2. タイトル付き画像
-![Alt text](./images/test.svg "これはタイトルです")
+### シンプルなローカル画像
 
-## 複数の画像
+<img src="./images/test.svg">
 
-![画像1](./images/test.svg)
+### PNGファイル
 
-![画像2](https://via.placeholder.com/200x150/f90/fff.png?text=Image+2)
+<img src="./images/test.png">
 
-## 説明
+### style属性でサイズ指定（width / height）
 
-- ローカル画像はBase64エンコードされてData URLとして埋め込まれます
-- Web画像はそのままURLが使用されます
-- 画像が見つからない場合はaltテキストが表示されます
+<img src="./images/test.svg" style="width: 200px; height: 200px;">
+
+### style属性で最大幅指定
+
+<img src="./images/test.png" style="max-width: 150px;">
+
+### width / height 属性で指定
+
+<img src="./images/test.svg" width="120" height="120">
+
+### alt・title属性付き
+
+<img src="./images/test.png" alt="テスト画像" title="これはimgタグのタイトルです" style="width: 180px;">
+
+### self-closing形式
+
+<img src="./images/test.svg" style="width: 100px;" />
+
+### Web画像（変換なし・そのまま使用）
+
+<img src="https://via.placeholder.com/300x200/f90/fff.png?text=img+tag" style="border: 2px solid gray;">
+
+---
+
+## 3. 説明
+
+| 記法 | ローカル画像 | サイズ指定 |
+|------|-------------|-----------|
+| マークダウン `![alt](src)` | Base64変換 | 非対応 |
+| `<img>` タグ | Base64変換 | style / width / height 属性を保持 |
+
+- ローカル画像はいずれの記法でも Base64 エンコードされ Data URL として埋め込まれます
+- `<img>` タグは `style`・`width`・`height` など全属性をそのまま保持します
+- `http://`、`https://`、`data:` で始まる src は変換をスキップします
+- 画像が見つからない場合は alt テキストが表示されます
