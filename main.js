@@ -114,6 +114,40 @@ renderer.image = function({href, title, text}) {
   return `<img src="${imageSrc}"${altAttr}${titleAttr}>`;
 };
 
+/**
+ * HTML内の<img>タグを処理する
+ * - ローカル画像のsrcをBase64 Data URLに変換
+ * - style属性のwidth/heightなど既存の属性はそのまま保持
+ * @param {string} html - 処理対象のHTML文字列
+ * @returns {string} - 処理後のHTML文字列
+ */
+function processImgTagsInHtml(html) {
+  // <img>タグを検出（self-closing形式 <img /> にも対応）
+  return html.replace(/<img(\s[^>]*?)\s*\/?>/gi, (match, attrs) => {
+    // src属性を取得（シングル・ダブルクォートの両方に対応）
+    const srcMatch = attrs.match(/\bsrc=(["'])([^"']*)\1/i);
+    if (!srcMatch) return match;
+
+    const src = srcMatch[2];
+
+    // http://, https://, data: はそのまま使用
+    if (/^(https?:\/\/|data:)/i.test(src)) return match;
+
+    // 相対パスを絶対パスに変換してBase64に変換
+    const absolutePath = path.resolve(currentMarkdownDir, src);
+    const dataURL = convertImageToDataURL(absolutePath);
+
+    if (!dataURL) {
+      console.warn(`<img>タグの画像が見つかりません: ${absolutePath}`);
+      return match;
+    }
+
+    // src属性のみ置換し、他の属性（style, width, height等）はそのまま保持
+    const newAttrs = attrs.replace(/\bsrc=(["'])[^"']*\1/i, `src="${dataURL}"`);
+    return `<img${newAttrs}>`;
+  });
+}
+
 marked.setOptions({
   renderer: renderer,
   breaks: true,
@@ -358,7 +392,8 @@ function loadMarkdownContent(win, markdownFile) {
 
     // マークダウンファイルを読み込み
     const markdown = fs.readFileSync(markdownFile, 'utf-8');
-    const htmlContent = marked.parse(markdown);
+    // marked.parseでHTML化し、<img>タグのローカル画像もBase64変換する
+    const htmlContent = processImgTagsInHtml(marked.parse(markdown));
 
     // テーマに応じたCSSファイルを読み込み
     const cssPaths = themeManager.getThemeCssPaths(__dirname);
