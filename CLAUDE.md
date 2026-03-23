@@ -27,7 +27,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - GitHub-compatible markdown rendering
 - Mermaid diagram support (flowcharts, sequence diagrams, gantt charts, class diagrams, state diagrams, ER diagrams)
 - **Hot reload**: Automatic viewer update when markdown file is edited externally
-- **Image display**: Support for local images with relative paths (e.g., `./path/to/image.jpg`)
+- **Image display**: Support for local images with relative paths via markdown syntax and raw `<img>` tags (with style/width/height attribute support)
 - **Link navigation**: Click markdown links to navigate between files, with browser back functionality
 - **External links**: HTTP/HTTPS links open in default browser
 
@@ -111,10 +111,13 @@ markdown-viewer/
      - `mermaid`コードブロック → `<div class="mermaid">`
      - 画像タグ → Base64エンコードされたData URLに変換
    - **Image Processing**:
-     - `convertImageToDataURL()`関数でローカル画像をBase64変換 (main.js:50-77)
+     - `convertImageToDataURL()`関数でローカル画像をBase64変換 (main.js:59-87)
      - 相対パスを絶対パスに解決し、ファイルを読み込み
      - 拡張子からMIMEタイプを自動判定(PNG/JPG/GIF/SVG/WebP/BMP/ICO対応)
      - `data:image/png;base64,...` 形式で返却
+     - `processImgTagsInHtml()`関数でHTML中の`<img>`タグも処理 (main.js:117-150)
+       - `style`・`width`・`height`など既存属性を保持したまま`src`のみBase64変換
+       - self-closing形式 (`<img ... />`) にも対応
    - **HTML Loading**:
      - 一時HTMLファイル(`app.getPath('temp')/markdown-viewer-temp.html`)を使用
      - Data URLナビゲーション制限を回避するため`loadFile()`で読み込み
@@ -144,7 +147,7 @@ markdown-viewer/
    - Maintains `contextIsolation: true` security
 
 5. **Rendering Pipeline:**
-   - Read markdown file (or default.md) → Parse with marked (configured with highlight.js and custom renderer for Mermaid and images) → Generate HTML with theme-aware CSS and Mermaid.js script → Write to temporary HTML file → Load in Electron window via loadFile → Mermaid automatically renders diagrams on page load
+   - Read markdown file (or default.md) → Parse with marked (configured with highlight.js and custom renderer for Mermaid and images) → **`processImgTagsInHtml()`でHTML中の`<img>`タグのローカル画像をBase64変換** → Generate HTML with theme-aware CSS and Mermaid.js script → Write to temporary HTML file → Load in Electron window via loadFile → Mermaid automatically renders diagrams on page load
 
 6. **Hot Reload Pipeline:**
    - External editor saves markdown file → chokidar detects change → FileWatcher debounces events → 'change' event fired → loadMarkdownContent() re-executed → Viewer automatically updates
@@ -228,7 +231,7 @@ markdown-viewer/
   - Web画像: `https://`または`http://`で始まるURL
   - Data URL: `data:`スキームの画像
 
-- **使用方法**:
+- **使用方法（マークダウン記法）**:
   ```markdown
   # 相対パス（同じディレクトリ）
   ![説明文](./image.png)
@@ -246,26 +249,46 @@ markdown-viewer/
   ![説明文](./image.png "これはタイトルです")
   ```
 
+- **使用方法（`<img>`タグ記法）**:
+  ```html
+  <!-- シンプルなローカル画像 -->
+  <img src="./image.png">
+
+  <!-- style属性でサイズ指定 -->
+  <img src="./image.png" style="width: 400px; height: 300px;">
+
+  <!-- max-width指定 -->
+  <img src="./image.png" style="max-width: 100%;">
+
+  <!-- width/height属性でサイズ指定 -->
+  <img src="./image.png" width="400" height="300">
+
+  <!-- self-closing形式 -->
+  <img src="./image.png" style="width: 200px;" />
+  ```
+
 - **技術的な実装**:
-  - markedのカスタムレンダラー(`renderer.image`)で画像タグを処理 (main.js:79-105)
+  - マークダウン記法: markedのカスタムレンダラー(`renderer.image`)で処理 (main.js:89-115)
+  - `<img>`タグ記法: `processImgTagsInHtml()`関数でmarked.parse後のHTMLを後処理 (main.js:117-150)
+    - `style`・`width`・`height`など全属性を保持したまま`src`属性のみBase64変換
+    - self-closing形式 (`<img ... />`) にも対応
   - 相対パスは`currentMarkdownDir`（現在のマークダウンファイルのディレクトリ）を基準に絶対パスに変換
   - **ローカル画像はBase64エンコードしてData URLとして埋め込み** (Electronのセキュリティ制約を回避)
   - `https://`、`http://`、`data:`で始まるURLはそのまま使用
-  - loadMarkdownContent関数(main.js:353-477)でマークダウンファイルのディレクトリパスを保存
-  - convertImageToDataURL関数(main.js:50-77)で画像ファイルを読み込みBase64変換
+  - loadMarkdownContent関数(main.js:388-)でマークダウンファイルのディレクトリパスを保存
+  - convertImageToDataURL関数(main.js:59-87)で画像ファイルを読み込みBase64変換
 
 - **パス解決とBase64変換の仕組み**:
-  1. マークダウンファイルを読み込む際、そのファイルのディレクトリパスを`currentMarkdownDir`に保存 (main.js:356)
-  2. 画像タグのパスが相対パスの場合、`path.resolve(currentMarkdownDir, imagePath)`で絶対パスに変換 (main.js:87)
-  3. 変換した絶対パスの画像ファイルを`fs.readFileSync()`で読み込み (main.js:53)
+  1. マークダウンファイルを読み込む際、そのファイルのディレクトリパスを`currentMarkdownDir`に保存
+  2. 画像パスが相対パスの場合、`path.resolve(currentMarkdownDir, imagePath)`で絶対パスに変換
+  3. 変換した絶対パスの画像ファイルを`fs.readFileSync()`で読み込み
   4. MIMEタイプを拡張子から判定:
      - サポートされる拡張子: `.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.bmp`, `.ico`
      - MIMEタイプマッピング例: `.png` → `image/png`, `.jpg` → `image/jpeg`
-     - デフォルトは`image/png` (main.js:56-68)
-  5. Buffer形式の画像データをBase64エンコード: `buffer.toString('base64')` (main.js:71)
-  6. Data URLを生成: `data:${mimeType};base64,${base64}` (main.js:72)
-  7. 生成したData URLをHTML imgタグのsrc属性に設定 (main.js:92)
-  8. 画像が見つからない場合は警告ログを出力し、元のパスを使用(altテキストが表示される) (main.js:95-97)
+     - デフォルトは`image/png`
+  5. Buffer形式の画像データをBase64エンコード: `buffer.toString('base64')`
+  6. Data URLを生成: `data:${mimeType};base64,${base64}`
+  7. 画像が見つからない場合は警告ログを出力し、元のパスを使用（altテキストが表示される）
 
 - **Electronセキュリティ制約の対処**:
   - **問題1**: `file://`プロトコルでのローカルリソース読み込みが制限される

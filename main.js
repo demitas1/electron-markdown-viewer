@@ -5,6 +5,7 @@ const { marked } = require('marked');
 const hljs = require('highlight.js');
 const { ThemeManager, THEMES } = require('./theme-manager');
 const { FileWatcher } = require('./file-watcher');
+const markedKatex = require('marked-katex-extension');
 
 // サンドボックスを無効化（開発環境用）
 app.commandLine.appendSwitch('no-sandbox');
@@ -55,6 +56,20 @@ renderer.code = function({text, lang, escaped}) {
   const autoHighlighted = hljs.highlightAuto(code).value;
   return `<pre><code class="hljs">${autoHighlighted}</code></pre>`;
 };
+
+/**
+ * KaTeX CSSのフォントURLを絶対file://パスに書き換える
+ * 一時HTMLファイルから相対パスでフォントを参照できないため
+ * @returns {string} - フォントURLを書き換えたCSS文字列
+ */
+function getKatexCss() {
+  const katexCssPath = require.resolve('katex/dist/katex.min.css');
+  const katexDistDir = path.dirname(katexCssPath);
+  let css = fs.readFileSync(katexCssPath, 'utf-8');
+  // url(fonts/xxx) を url(file:///絶対パス/fonts/xxx) に置換
+  css = css.replace(/url\(fonts\//g, `url(file://${katexDistDir}/fonts/`);
+  return css;
+}
 
 // 画像ファイルをBase64 Data URLに変換する関数
 function convertImageToDataURL(imagePath) {
@@ -153,6 +168,12 @@ marked.setOptions({
   breaks: true,
   gfm: true
 });
+
+// KaTeX数式サポートの設定（$...$インライン、$$...$$ブロック）
+marked.use(markedKatex({
+  throwOnError: false,   // 数式エラー時もクラッシュしない
+  nonStandard: true      // $の前後にスペースがなくても認識（日本語テキスト対応）
+}));
 
 /**
  * メニューを作成・更新
@@ -399,6 +420,7 @@ function loadMarkdownContent(win, markdownFile) {
     const cssPaths = themeManager.getThemeCssPaths(__dirname);
     const githubCss = fs.readFileSync(cssPaths.markdown, 'utf-8');
     const highlightCss = fs.readFileSync(cssPaths.highlight, 'utf-8');
+    const katexCss = getKatexCss();
 
     // HTML全体を生成
     const html = `
@@ -411,6 +433,7 @@ function loadMarkdownContent(win, markdownFile) {
   <style id="theme-styles">
     ${githubCss}
     ${highlightCss}
+    ${katexCss}
   </style>
   <style>
     body {

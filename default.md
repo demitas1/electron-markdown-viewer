@@ -26,3 +26,17 @@ GitHub互換のマークダウンビューアへようこそ。
 - **Light Theme** - ライトテーマ
 - **Dark Theme** - ダークテーマ
 - **Follow System Theme** - システム設定に従う（デフォルト）
+
+## 数式サポート（KaTeX）
+
+インライン数式: $E = mc^2$、$a^2 + b^2 = c^2$
+
+ブロック数式:
+
+$$
+\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+$$
+
+$$
+\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}
+$$
