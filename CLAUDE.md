@@ -19,6 +19,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - github-markdown-css for GitHub-compatible styling (light/dark themes)
 - mermaid for diagram rendering (flowcharts, sequence diagrams, gantt charts, etc.)
 - chokidar for file system watching with cross-platform support
+- katex + marked-katex-extension for math formula rendering
 
 **Key Features:**
 - Light/Dark theme switching with system theme detection
@@ -30,6 +31,7 @@ Electron-based GitHub-compatible markdown viewer that renders markdown files wit
 - **Image display**: Support for local images with relative paths via markdown syntax and raw `<img>` tags (with style/width/height attribute support)
 - **Link navigation**: Click markdown links to navigate between files, with browser back functionality
 - **External links**: HTTP/HTTPS links open in default browser
+- **Math formulas**: KaTeX rendering for `$...$` inline and `$$...$$` block math
 
 ## Commands
 
@@ -398,6 +400,40 @@ const tempHtmlPath = path.join(app.getPath('temp'), 'markdown-viewer-temp.html')
 fs.writeFileSync(tempHtmlPath, html, 'utf-8');
 win.loadFile(tempHtmlPath);
 ```
+
+### KaTeX数式サポート
+
+- **構文**: `$...$`（インライン）、`$$...$$`（ブロック）
+- **実装**: `marked-katex-extension` を `marked.use()` で組み込み（main.js:169-173）
+- **オプション**: `nonStandard: true` で日本語テキスト直後など前後にスペースがない数式も認識
+- **CSS**: `getKatexCss()` 関数でKaTeX CSSのフォントURLを絶対 `file://` パスに変換（一時HTMLファイル対応）
+- **フォント**: `require.resolve('katex/dist/katex.min.css')` で node_modules 内の正確なパスを取得
+
+### KaTeX多行数式の注意点
+
+`$$...$$` ブロック内で改行しても KaTeX は数式モード内の改行をスペースとして扱うため、すべて1行に連結されて表示される。
+
+**NG（1行に連結される）:**
+```latex
+$$
+A = x
+= y
+$$
+```
+
+**OK（`\begin{aligned}` を使って整列）:**
+```latex
+$$
+\begin{aligned}
+A &= x \\[6pt]
+  &= y
+\end{aligned}
+$$
+```
+
+- `&=` で等号を揃える
+- `\\` または `\\[6pt]`（行間スペース付き）で改行
+- KaTeX は `aligned` 環境をサポート（`\begin{aligned}...\end{aligned}`）
 
 ### ローカル画像が表示されない問題
 
